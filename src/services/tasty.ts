@@ -8,6 +8,9 @@ export interface ChainResult {
 
 export interface SkewResult {
     skew: number;
+    pricingSkew: number | null;
+    impliedMove: number | null;
+    underlyingPrice: number | null;
     expirationDate: string;
     dte: number;
     callOi: number;

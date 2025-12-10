@@ -25,6 +25,9 @@ export interface ChainResult {
 
 export interface SkewResult {
     skew: number;
+    pricingSkew: number | null;
+    impliedMove: number | null;
+    underlyingPrice: number | null;
     expirationDate: string;
     dte: number;
     callOi: number;
@@ -135,6 +138,36 @@ export const authenticate = async (): Promise<TastytradeClient> => {
     });
 
     return client;
+};
+
+/**
+ * Get the streamer symbol for an underlying (futures or equity)
+ */
+export const getStreamerSymbol = async (symbol: string): Promise<string> => {
+    if (!client) await authenticate();
+
+    const hasSlash = symbol.startsWith('/');
+    const normalizedSymbol = symbol.replace('/', '');
+
+    try {
+        if (hasSlash) {
+            // Futures - use symbol without slash for API endpoint
+            // @ts-ignore
+            const response = await client!.httpClient.getData(`/instruments/futures/${encodeURIComponent(normalizedSymbol)}`);
+            const data = response?.data?.data || response?.data || response;
+            const streamerSymbol = data['streamer-symbol'];
+            return streamerSymbol || symbol;
+        } else {
+            // Equity
+            // @ts-ignore
+            const response = await client!.httpClient.getData(`/instruments/equities/${encodeURIComponent(normalizedSymbol)}`);
+            const data = response?.data?.data || response?.data || response;
+            const streamerSymbol = data['streamer-symbol'];
+            return streamerSymbol || symbol;
+        }
+    } catch (error) {
+        return symbol;
+    }
 };
 
 export const fetchOptionChain = async (symbol: string): Promise<ChainResult> => {
@@ -331,12 +364,24 @@ export const streamSkewCalculation = async (
         const callCandidates: { symbol: string, delta: number }[] = [];
         const putCandidates: { symbol: string, delta: number }[] = [];
 
+        // Also find ATM options (closest to 50 delta) for implied move calculation
+        let atmCall: { symbol: string, delta: number } | null = null;
+        let atmPut: { symbol: string, delta: number } | null = null;
+
         for (const [sym, delta] of Object.entries(deltaMap)) {
             if (delta >= 0.10 && delta <= 0.30) {
                 callCandidates.push({ symbol: sym, delta });
             }
             if (delta <= -0.10 && delta >= -0.30) {
                 putCandidates.push({ symbol: sym, delta });
+            }
+
+            // Find closest to 50 delta (ATM)
+            if (delta > 0 && (!atmCall || Math.abs(delta - 0.50) < Math.abs(atmCall.delta - 0.50))) {
+                atmCall = { symbol: sym, delta };
+            }
+            if (delta < 0 && (!atmPut || Math.abs(delta - (-0.50)) < Math.abs(atmPut.delta - (-0.50)))) {
+                atmPut = { symbol: sym, delta };
             }
         }
 
@@ -366,19 +411,57 @@ export const streamSkewCalculation = async (
             console.warn("Failed to unsubscribe between phases:", e);
         }
 
-        // ====== PHASE 2: Stream filtered symbols for OI ======
-        console.log(`[Phase 2] Subscribing to ${filteredSymbols.length} filtered symbols...`);
-        client!.quoteStreamer.subscribe(filteredSymbols);
-        currentSubscribedSymbols = [...filteredSymbols];
+        // ====== PHASE 2: Stream filtered symbols for OI + ATM for implied move ======
+        // Build subscription list: filtered symbols + ATM options + underlying
+        const phase2Symbols = [...filteredSymbols];
+        if (atmCall && !phase2Symbols.includes(atmCall.symbol)) {
+            phase2Symbols.push(atmCall.symbol);
+        }
+        if (atmPut && !phase2Symbols.includes(atmPut.symbol)) {
+            phase2Symbols.push(atmPut.symbol);
+        }
+
+        // Construct the underlying futures contract symbol from expiration date
+        // We have: input symbol (/ES), expiration date (2025-12-31)
+        // Construct: ESZ5 (root + month code + year digit)
+        let underlyingStreamerSymbol = symbol;
+        const isFutures = symbol.startsWith('/');
+
+        if (isFutures) {
+            const monthCodes = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z'];
+            const expDate = parseISO(chainResult.expirationDate);
+            const monthCode = monthCodes[expDate.getMonth()];
+            const yearDigit = expDate.getFullYear() % 10;
+            const rootSymbol = symbol.replace('/', '');
+            const futuresContract = `${rootSymbol}${monthCode}${yearDigit}`; // e.g., ESZ5
+
+            // Get the streamer symbol for this contract
+            underlyingStreamerSymbol = await getStreamerSymbol('/' + futuresContract);
+        } else {
+            // For equities, the symbol itself is the underlying
+            underlyingStreamerSymbol = await getStreamerSymbol(symbol);
+        }
+        phase2Symbols.push(underlyingStreamerSymbol);
+
+        console.log(`[Phase 2] Subscribing to ${phase2Symbols.length} symbols (including ATM + underlying)...`);
+        client!.quoteStreamer.subscribe(phase2Symbols);
+        currentSubscribedSymbols = [...phase2Symbols];
 
         onProgress({ type: 'phase2', message: `Collecting OI for ${filteredSymbols.length} symbols...` });
 
         const result = await new Promise<SkewResult>((resolve, reject) => {
-            const dataStore: Record<string, { delta: number, oi?: number }> = {};
+            const dataStore: Record<string, { delta: number, oi?: number, bid?: number, ask?: number }> = {};
 
             for (const sym of filteredSymbols) {
                 dataStore[sym] = { delta: deltaMap[sym] };
             }
+
+            // Track ATM options separately
+            let atmCallBid: number | undefined;
+            let atmCallAsk: number | undefined;
+            let atmPutBid: number | undefined;
+            let atmPutAsk: number | undefined;
+            let underlyingPrice: number | undefined;
 
             currentTimeout = setTimeout(() => {
                 let callOiSum = 0;
@@ -387,6 +470,12 @@ export const streamSkewCalculation = async (
                 let putCount = 0;
                 let avgCallDelta = 0;
                 let avgPutDelta = 0;
+
+                // For pricing skew calculation
+                let callMidSum = 0;
+                let putMidSum = 0;
+                let callMidCount = 0;
+                let putMidCount = 0;
 
                 for (const [, data] of Object.entries(dataStore)) {
                     if (data.delta !== undefined && data.oi !== undefined && data.oi > 0) {
@@ -401,15 +490,47 @@ export const streamSkewCalculation = async (
                             putCount++;
                         }
                     }
+
+                    // Calculate mid prices for pricing skew
+                    if (data.bid !== undefined && data.ask !== undefined && data.bid > 0 && data.ask > 0) {
+                        const mid = (data.bid + data.ask) / 2;
+                        if (data.delta >= 0.10 && data.delta <= 0.30) {
+                            callMidSum += mid;
+                            callMidCount++;
+                        }
+                        if (data.delta <= -0.10 && data.delta >= -0.30) {
+                            putMidSum += mid;
+                            putMidCount++;
+                        }
+                    }
                 }
 
                 if (callOiSum > 0) avgCallDelta /= callOiSum;
                 if (putOiSum > 0) avgPutDelta /= putOiSum;
 
+                // Calculate pricing skew
+                const avgCallMid = callMidCount > 0 ? callMidSum / callMidCount : 0;
+                const avgPutMid = putMidCount > 0 ? putMidSum / putMidCount : 0;
+                const pricingSkew = avgCallMid > 0 ? avgPutMid / avgCallMid : null;
+
+                // Calculate implied move from ATM straddle
+                let impliedMove: number | null = null;
+                if (atmCallBid !== undefined && atmCallAsk !== undefined &&
+                    atmPutBid !== undefined && atmPutAsk !== undefined &&
+                    underlyingPrice !== undefined && underlyingPrice > 0) {
+                    const atmCallMid = (atmCallBid + atmCallAsk) / 2;
+                    const atmPutMid = (atmPutBid + atmPutAsk) / 2;
+                    const straddlePrice = atmCallMid + atmPutMid;
+                    impliedMove = (straddlePrice / underlyingPrice) * 100;
+                }
+
                 if (callOiSum > 0 && putOiSum > 0) {
                     const skew = putOiSum / callOiSum;
                     resolve({
                         skew,
+                        pricingSkew,
+                        impliedMove,
+                        underlyingPrice: underlyingPrice ?? null,
                         expirationDate: chainResult.expirationDate,
                         dte: chainResult.dte,
                         callOi: callOiSum,
@@ -431,12 +552,44 @@ export const streamSkewCalculation = async (
                     const sym = event.eventSymbol || event.symbol;
                     const type = event.eventType;
 
-                    if (!sym || !filteredSymbols.includes(sym)) continue;
+                    if (!sym) continue;
 
-                    if (type === 'Summary' || event.summary || type === 'Quote') {
-                        const oi = event.summary?.openInterest || event.openInterest;
-                        if (typeof oi === 'number' && dataStore[sym]) {
-                            dataStore[sym].oi = oi;
+                    // Capture underlying price from Trade or Quote events
+                    if (sym === underlyingStreamerSymbol && (type === 'Trade' || type === 'Quote')) {
+                        const price = event.price || event.lastPrice || event.bidPrice;
+                        if (typeof price === 'number' && price > 0) {
+                            underlyingPrice = price;
+                        }
+                    }
+
+                    // Capture ATM option bid/ask
+                    if (type === 'Quote') {
+                        const bid = event.bidPrice;
+                        const ask = event.askPrice;
+
+                        if (atmCall && sym === atmCall.symbol && typeof bid === 'number' && typeof ask === 'number') {
+                            atmCallBid = bid;
+                            atmCallAsk = ask;
+                        }
+                        if (atmPut && sym === atmPut.symbol && typeof bid === 'number' && typeof ask === 'number') {
+                            atmPutBid = bid;
+                            atmPutAsk = ask;
+                        }
+
+                        // Also capture for filtered symbols (pricing skew)
+                        if (typeof bid === 'number' && typeof ask === 'number' && dataStore[sym]) {
+                            dataStore[sym].bid = bid;
+                            dataStore[sym].ask = ask;
+                        }
+                    }
+
+                    // Capture OI for filtered symbols
+                    if (filteredSymbols.includes(sym)) {
+                        if (type === 'Summary' || event.summary) {
+                            const oi = event.summary?.openInterest || event.openInterest;
+                            if (typeof oi === 'number' && dataStore[sym]) {
+                                dataStore[sym].oi = oi;
+                            }
                         }
                     }
                 }

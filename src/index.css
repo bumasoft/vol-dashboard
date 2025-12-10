@@ -386,11 +386,42 @@ input[type="text"]:focus {
   margin-top: 2px;
 }
 
-.asset-card__skew {
-  font-size: 24px;
-  font-weight: 700;
+.asset-card__skew-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: help;
+}
+
+.asset-card__skew-row:first-of-type {
+  margin-bottom: 2px;
+}
+
+.asset-card__skew-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  min-width: 32px;
+}
+
+.asset-card__skew-value {
   font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 700;
+}
+
+.asset-card__skew-row:first-of-type .asset-card__skew-value {
+  font-size: 22px;
   line-height: 1.2;
+}
+
+.asset-card__skew-row:nth-of-type(2) .asset-card__skew-value,
+.asset-card__skew-row:nth-of-type(3) .asset-card__skew-value {
+  font-size: 14px;
+}
+
+.asset-card__implied-move {
+  color: #38bdf8 !important;
 }
 
 .asset-card__sentiment {

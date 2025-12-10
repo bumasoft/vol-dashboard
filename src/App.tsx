@@ -12,7 +12,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [details, setDetails] = useState<SkewResult | null>(null);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('single');
+  const [viewMode, setViewMode] = useState<ViewMode>('market');
   const cleanupRef = useRef<(() => void) | null>(null);
 
   // Autosuggest state
@@ -132,7 +132,7 @@ function App() {
       (result) => {
         setSkew(result.skew);
         setDetails(result);
-        setStatus('Calculation Complete');
+        setStatus('');
         setLoading(false);
         cleanupRef.current = null;
       },
@@ -177,16 +177,16 @@ function App() {
             {/* View Mode Toggle */}
             <div className="view-toggle">
               <button
-                className={`view-toggle__btn ${viewMode === 'single' ? 'view-toggle__btn--active' : ''}`}
-                onClick={() => setViewMode('single')}
-              >
-                Single Asset
-              </button>
-              <button
                 className={`view-toggle__btn ${viewMode === 'market' ? 'view-toggle__btn--active' : ''}`}
                 onClick={() => setViewMode('market')}
               >
                 Market Overview
+              </button>
+              <button
+                className={`view-toggle__btn ${viewMode === 'single' ? 'view-toggle__btn--active' : ''}`}
+                onClick={() => setViewMode('single')}
+              >
+                Single Asset
               </button>
             </div>
 
@@ -274,32 +274,79 @@ function App() {
               </div>
             )}
 
-            {skew !== null && (
-              <div className="mt-8 bg-black/20 rounded-2xl border border-white/5 p-8 relative overflow-hidden animate-in zoom-in-95 duration-300">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-emerald-500 opacity-50" />
+            {skew !== null && details && (() => {
+              const getSkewColor = (s: number) =>
+                s < 0.7 ? '#22c55e' : s < 1.0 ? '#facc15' : s < 1.3 ? '#f97316' : '#ef4444';
+              const avgSkew = details.pricingSkew !== null
+                ? (skew + details.pricingSkew) / 2
+                : skew;
+              const getSentiment = (s: number) =>
+                s < 0.7 ? 'Bullish' : s < 1.0 ? 'Neutral' : s < 1.3 ? 'Sl. Bearish' : 'Bearish';
 
-                <div className="text-center mb-8">
-                  <div className="text-xs font-bold text-white/40 uppercase tracking-widest mb-3">10-30 Delta P/C Ratio</div>
-                  <div
-                    className="text-6xl md:text-7xl font-mono font-bold drop-shadow-2xl"
-                    style={{
-                      color: skew < 0.7 ? '#22c55e' :   // Green - Bullish
-                        skew < 1.0 ? '#facc15' :   // Yellow - Neutral
-                          skew < 1.3 ? '#f97316' :   // Orange - Mildly Bearish
-                            '#ef4444'                  // Red - Bearish
-                    }}
-                  >
-                    {skew.toFixed(4)}
-                  </div>
-                  <div className="text-xs text-white/30 mt-2">
-                    {skew < 0.7 ? '🟢 Bullish' :
-                      skew < 1.0 ? '🟡 Neutral/Slightly Bullish' :
-                        skew < 1.3 ? '🟠 Slightly Bearish' :
-                          '🔴 Bearish'}
-                  </div>
-                </div>
+              return (
+                <div className="mt-8 bg-black/20 rounded-2xl border border-white/5 p-8 relative overflow-hidden animate-in zoom-in-95 duration-300">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-emerald-500 opacity-50" />
 
-                {details && (
+                  <div className="text-center mb-8">
+                    <div className="text-xs font-bold text-white/40 uppercase tracking-widest mb-4">10-30 Delta P/C Ratio</div>
+
+                    {/* OI Skew */}
+                    <div
+                      className="flex items-baseline justify-center gap-3 mb-2 cursor-help"
+                      title="OI Skew: Put Open Interest / Call Open Interest"
+                    >
+                      <span className="text-sm font-semibold text-white/40 uppercase w-16 text-right">OI</span>
+                      <span
+                        className="text-5xl md:text-6xl font-mono font-bold drop-shadow-2xl"
+                        style={{ color: getSkewColor(skew) }}
+                      >
+                        {skew.toFixed(4)}
+                      </span>
+                    </div>
+
+                    {/* Pricing Skew */}
+                    <div
+                      className="flex items-baseline justify-center gap-3 cursor-help"
+                      title="Price Skew: Avg Put Mid Price / Avg Call Mid Price"
+                    >
+                      <span className="text-sm font-semibold text-white/40 uppercase w-16 text-right">Price</span>
+                      <span
+                        className="text-3xl md:text-4xl font-mono font-bold drop-shadow-xl"
+                        style={{ color: details.pricingSkew !== null ? getSkewColor(details.pricingSkew) : 'rgba(255,255,255,0.4)' }}
+                      >
+                        {details.pricingSkew !== null ? details.pricingSkew.toFixed(4) : 'N/A'}
+                      </span>
+                    </div>
+
+                    {/* Implied Move */}
+                    <div
+                      className="flex items-baseline justify-center gap-3 mt-2 cursor-help"
+                      title={(() => {
+                        if (details.impliedMove === null || details.underlyingPrice === null) {
+                          return 'Implied Move: Expected price range by expiration (ATM straddle / underlying price)';
+                        }
+                        const decimals = symbol.startsWith('/6') ? 4 : 2;
+                        const lower = (details.underlyingPrice * (1 - details.impliedMove / 100)).toFixed(decimals);
+                        const upper = (details.underlyingPrice * (1 + details.impliedMove / 100)).toFixed(decimals);
+                        return `Implied Move: ±${details.impliedMove.toFixed(2)}% | Range: ${lower} - ${upper}`;
+                      })()}
+                    >
+                      <span className="text-sm font-semibold text-white/40 uppercase w-16 text-right">Move</span>
+                      <span className="text-2xl md:text-3xl font-mono font-bold drop-shadow-xl text-sky-400">
+                        {details.impliedMove !== null ? `±${details.impliedMove.toFixed(2)}%` : 'N/A'}
+                      </span>
+                    </div>
+
+                    {/* Sentiment based on average */}
+                    <div
+                      className="text-sm font-bold uppercase tracking-wider mt-4 cursor-help"
+                      style={{ color: getSkewColor(avgSkew) }}
+                      title="Based on average of OI and Price skew"
+                    >
+                      {getSentiment(avgSkew)}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4 text-sm border-t border-white/5 pt-6">
                     <div className="space-y-1">
                       <div className="text-white/30 text-xs uppercase font-semibold">Expiration</div>
@@ -321,9 +368,9 @@ function App() {
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
