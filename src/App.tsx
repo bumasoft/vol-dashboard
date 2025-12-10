@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { streamSkewCalculation, checkHealth, searchSymbols } from './services/tasty';
 import type { SkewResult, SymbolSearchResult } from './services/tasty';
+import { MarketOverview } from './components/MarketOverview';
+
+type ViewMode = 'single' | 'market';
 
 function App() {
   const [symbol, setSymbol] = useState('/ES');
@@ -9,6 +12,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [details, setDetails] = useState<SkewResult | null>(null);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('single');
   const cleanupRef = useRef<(() => void) | null>(null);
 
   // Autosuggest state
@@ -151,20 +155,40 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+    <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex flex-col items-center p-4 relative overflow-hidden font-sans">
       {/* Background Glow Orbs */}
       <div className="glow-orb-blue top-[-15%] left-[-10%]" />
       <div className="glow-orb-emerald bottom-[-15%] right-[-10%]" />
 
-      <div className="max-w-xl w-full relative z-10 animate-fade-in">
-        <div className="glass-card rounded-3xl p-8 md:p-12">
+      {/* Header with Logo and View Toggle */}
+      <div className="w-full max-w-[1200px] relative z-10 animate-fade-in pt-8 pb-6">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <img src="/logo.png" alt="TradingNirvana Logo" className="w-12 h-12 opacity-90 drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]" />
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight gradient-text">
+                TradingNirvana™
+              </h1>
+              <p className="text-white/40 text-xs font-medium tracking-widest uppercase">Volatility Dashboard</p>
+            </div>
+          </div>
 
-          <div className="flex flex-col items-center mb-10">
-            <img src="/logo.png" alt="TradingNirvana Logo" className="w-16 h-16 mb-6 opacity-90 drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]" />
-            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-center mb-2 gradient-text">
-              TradingNirvana™
-            </h1>
-            <p className="text-white/40 text-sm font-medium tracking-widest uppercase mb-4">Volatility Dashboard</p>
+          <div className="flex items-center gap-6">
+            {/* View Mode Toggle */}
+            <div className="view-toggle">
+              <button
+                className={`view-toggle__btn ${viewMode === 'single' ? 'view-toggle__btn--active' : ''}`}
+                onClick={() => setViewMode('single')}
+              >
+                Single Asset
+              </button>
+              <button
+                className={`view-toggle__btn ${viewMode === 'market' ? 'view-toggle__btn--active' : ''}`}
+                onClick={() => setViewMode('market')}
+              >
+                Market Overview
+              </button>
+            </div>
 
             {/* Server status indicator */}
             <div className="flex items-center gap-2 text-xs">
@@ -172,11 +196,20 @@ function App() {
                 serverOnline ? 'bg-green-500' : 'bg-red-500'
                 }`} />
               <span className="text-white/40">
-                {serverOnline === null ? 'Checking server...' :
-                  serverOnline ? 'Server online' : 'Server offline'}
+                {serverOnline === null ? 'Checking...' :
+                  serverOnline ? 'Online' : 'Offline'}
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      {viewMode === 'market' ? (
+        <MarketOverview serverOnline={serverOnline} />
+      ) : (
+        <div className="max-w-xl w-full relative z-10 animate-fade-in flex-1 flex items-center">
+          <div className="glass-card rounded-3xl p-8 md:p-12 w-full">
 
           <div className="space-y-6">
             <div className="autosuggest-container">
@@ -294,6 +327,7 @@ function App() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -422,7 +422,7 @@ export const streamSkewCalculation = async (
                 } else {
                     reject(new Error(`Timeout: Got OI for ${callCount} calls and ${putCount} puts`));
                 }
-            }, 10000);
+            }, 30000); // 30 second timeout for Phase 2 OI collection
 
             const onOiMessage = (json: any) => {
                 const events = Array.isArray(json) ? json : [json];

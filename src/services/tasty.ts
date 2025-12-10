@@ -24,6 +24,37 @@ export interface StreamProgress {
     data?: any;
 }
 
+export interface AssetGroup {
+    name: string;
+    symbols: readonly string[];
+}
+
+export interface AssetGroups {
+    fx: AssetGroup;
+    indices: AssetGroup;
+    bonds: AssetGroup;
+    crypto: AssetGroup;
+}
+
+export interface MarketStatusResponse {
+    groups: AssetGroups;
+    descriptions: Record<string, string>;
+    status: Record<string, { cached: boolean; data: SkewResult | null }>;
+}
+
+export interface BatchProgressEvent {
+    type: 'connected' | 'progress' | 'complete' | 'error';
+    symbol?: string;
+    status?: 'pending' | 'calculating' | 'phase1' | 'phase2' | 'cached' | 'complete' | 'error';
+    data?: any;
+    symbols?: string[];
+    total?: number;
+    results?: Record<string, SkewResult>;
+    errors?: Record<string, string>;
+    summary?: { total: number; successful: number; failed: number };
+    message?: string;
+}
+
 /**
  * Fetch option chain from backend
  */
@@ -111,4 +142,67 @@ export const searchSymbols = async (query: string): Promise<SymbolSearchResult[]
     } catch {
         return [];
     }
+};
+
+/**
+ * Get market status for all assets (cached/uncached)
+ */
+export const getMarketStatus = async (): Promise<MarketStatusResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/market-status`);
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch market status');
+    }
+
+    return response.json();
+};
+
+/**
+ * Stream batch skew calculation using Server-Sent Events
+ */
+export const streamBatchCalculation = (
+    options: { symbols?: string[]; group?: 'fx' | 'indices' | 'bonds' | 'crypto' },
+    onProgress: (event: BatchProgressEvent) => void,
+    onComplete: () => void,
+    onError: (error: string) => void
+): (() => void) => {
+    let url = `${API_BASE_URL}/api/stream-batch`;
+
+    if (options.symbols && options.symbols.length > 0) {
+        url += `?symbols=${options.symbols.map(s => encodeURIComponent(s)).join(',')}`;
+    } else if (options.group) {
+        url += `?group=${options.group}`;
+    }
+
+    const eventSource = new EventSource(url);
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data) as BatchProgressEvent;
+
+            if (data.type === 'complete') {
+                onProgress(data);
+                onComplete();
+                eventSource.close();
+            } else if (data.type === 'error' && !data.symbol) {
+                // Global error, not symbol-specific
+                onError(data.message || 'Unknown error');
+                eventSource.close();
+            } else {
+                onProgress(data);
+            }
+        } catch (e) {
+            console.error('Failed to parse batch SSE data:', e);
+        }
+    };
+
+    eventSource.onerror = () => {
+        onError('Connection to server lost');
+        eventSource.close();
+    };
+
+    // Return cleanup function
+    return () => {
+        eventSource.close();
+    };
 };

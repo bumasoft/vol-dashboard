@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate, fetchOptionChain, streamSkewCalculation, cleanupStreamer, searchSymbols } from '../services/tastytrade';
 import { skewCache } from '../services/cache';
+import { ASSET_GROUPS, ALL_SYMBOLS, AssetGroupKey, SYMBOL_DESCRIPTIONS } from '../config/assets';
 
 export const apiRouter = Router();
 
@@ -15,6 +16,150 @@ apiRouter.get('/health', (_req: Request, res: Response) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         cache: skewCache.stats()
+    });
+});
+
+// Get market status for all assets (cached/uncached status)
+apiRouter.get('/market-status', (_req: Request, res: Response) => {
+    const status: Record<string, { cached: boolean; data: any | null }> = {};
+
+    for (const symbol of ALL_SYMBOLS) {
+        const cacheKey = getCacheKey(symbol);
+        const cachedResult = skewCache.get(cacheKey);
+        status[symbol] = {
+            cached: cachedResult !== null,
+            data: cachedResult
+        };
+    }
+
+    res.json({
+        groups: ASSET_GROUPS,
+        descriptions: SYMBOL_DESCRIPTIONS,
+        status
+    });
+});
+
+// SSE endpoint for batch skew calculation (sequential processing)
+// Note: Sequential processing required because Tastytrade streamer is a shared resource
+apiRouter.get('/stream-batch', async (req: Request, res: Response) => {
+    const symbolsParam = req.query.symbols as string | undefined;
+    const groupParam = req.query.group as AssetGroupKey | undefined;
+
+    // Determine which symbols to process
+    let symbols: string[] = [];
+    if (symbolsParam) {
+        symbols = symbolsParam.split(',').map(s => s.trim());
+    } else if (groupParam && ASSET_GROUPS[groupParam]) {
+        symbols = [...ASSET_GROUPS[groupParam].symbols];
+    } else {
+        symbols = [...ALL_SYMBOLS];
+    }
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    // Send initial connection event
+    res.write(`data: ${JSON.stringify({ type: 'connected', symbols, total: symbols.length })}\n\n`);
+
+    // Track state
+    const results: Record<string, any> = {};
+    const errors: Record<string, string> = {};
+    let isClientConnected = true;
+
+    // Handle client disconnect
+    req.on('close', () => {
+        isClientConnected = false;
+        console.log('Batch stream client disconnected');
+        cleanupStreamer();
+    });
+
+    // Send progress event helper
+    const sendProgress = (symbol: string, status: string, data?: any) => {
+        if (!isClientConnected) return;
+        res.write(`data: ${JSON.stringify({ type: 'progress', symbol, status, data })}\n\n`);
+    };
+
+    // Process a single symbol
+    const processSymbol = async (symbol: string): Promise<void> => {
+        if (!isClientConnected) return;
+
+        const cacheKey = getCacheKey(symbol);
+
+        // Check cache first
+        const cachedResult = skewCache.get(cacheKey);
+        if (cachedResult) {
+            sendProgress(symbol, 'cached', cachedResult);
+            results[symbol] = cachedResult;
+            return;
+        }
+
+        sendProgress(symbol, 'calculating');
+
+        try {
+            await authenticate();
+
+            await new Promise<void>((resolve) => {
+                streamSkewCalculation(symbol, (progress) => {
+                    if (!isClientConnected) {
+                        resolve();
+                        return;
+                    }
+
+                    if (progress.type === 'phase1' || progress.type === 'phase2') {
+                        sendProgress(symbol, progress.type, { message: progress.message });
+                    } else if (progress.type === 'result') {
+                        skewCache.set(cacheKey, progress.data);
+                        results[symbol] = progress.data;
+                        sendProgress(symbol, 'complete', progress.data);
+                        resolve();
+                    } else if (progress.type === 'error') {
+                        errors[symbol] = progress.message || 'Unknown error';
+                        sendProgress(symbol, 'error', { error: progress.message });
+                        resolve();
+                    }
+                });
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            errors[symbol] = message;
+            sendProgress(symbol, 'error', { error: message });
+        }
+    };
+
+    // Process all symbols sequentially
+    const runBatch = async () => {
+        for (const symbol of symbols) {
+            if (!isClientConnected) break;
+            await processSymbol(symbol);
+        }
+
+        // All done
+        if (isClientConnected) {
+            res.write(`data: ${JSON.stringify({
+                type: 'complete',
+                results,
+                errors,
+                summary: {
+                    total: symbols.length,
+                    successful: Object.keys(results).length,
+                    failed: Object.keys(errors).length
+                }
+            })}\n\n`);
+            res.write('event: close\ndata: done\n\n');
+            res.end();
+        }
+    };
+
+    runBatch().catch(err => {
+        console.error('Batch processing error:', err);
+        if (isClientConnected) {
+            res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+            res.end();
+        }
     });
 });
 

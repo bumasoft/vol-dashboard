@@ -189,3 +189,311 @@ input[type="text"]:focus {
   color: rgba(255, 255, 255, 0.4);
   font-size: 13px;
 }
+
+/* View Mode Toggle */
+.view-toggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.view-toggle__btn {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-toggle__btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.view-toggle__btn--active {
+  background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
+  color: #fff;
+}
+
+/* Market Overview */
+.market-overview {
+  width: 100%;
+  max-width: 1200px;
+  padding: 0 20px;
+}
+
+.market-overview__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.market-overview__title {
+  font-size: 24px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.market-overview__refresh-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.market-overview__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.market-overview__loading,
+.market-overview__error {
+  text-align: center;
+  padding: 60px 20px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 16px;
+}
+
+.market-overview__error {
+  color: #ef4444;
+}
+
+/* Asset Group */
+.asset-group {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.asset-group__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.asset-group__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.asset-group__refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.asset-group__refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.asset-group__refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.asset-group__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+/* Asset Card */
+.asset-card {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.asset-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.asset-card--loading {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.asset-card--loading::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.3), transparent);
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.asset-card--error {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.asset-card__header {
+  margin-bottom: 8px;
+}
+
+.asset-card__symbol {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.asset-card__description {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 2px;
+}
+
+.asset-card__skew {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  line-height: 1.2;
+}
+
+.asset-card__sentiment {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+.asset-card__dte {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.asset-card__cached-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.2);
+  color: rgba(16, 185, 129, 0.8);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.asset-card__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+}
+
+.asset-card__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(59, 130, 246, 0.3);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.asset-card__idle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+}
+
+.asset-card__error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #ef4444;
+  font-size: 11px;
+  text-align: center;
+}
+
+.asset-card__error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.asset-card__error-msg {
+  color: #ef4444;
+  font-size: 11px;
+  text-align: center;
+}
+
+.asset-card__retry-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.asset-card__retry-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.6);
+}
