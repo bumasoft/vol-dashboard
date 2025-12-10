@@ -1,0 +1,301 @@
+import { useState, useEffect, useRef } from 'react';
+import { streamSkewCalculation, checkHealth, searchSymbols } from './services/tasty';
+import type { SkewResult, SymbolSearchResult } from './services/tasty';
+
+function App() {
+  const [symbol, setSymbol] = useState('/ES');
+  const [status, setStatus] = useState('');
+  const [skew, setSkew] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [details, setDetails] = useState<SkewResult | null>(null);
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  // Autosuggest state
+  const [searchResults, setSearchResults] = useState<SymbolSearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Check server health on mount
+  useEffect(() => {
+    checkHealth().then(setServerOnline);
+  }, []);
+
+  // Debounced symbol search
+  const handleSymbolChange = (value: string) => {
+    const upperValue = value.toUpperCase();
+    setSymbol(upperValue);
+    setSelectedIndex(-1);
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Don't search if empty or too short
+    if (upperValue.length < 1) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    // Debounce search
+    setSearchLoading(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      const results = await searchSymbols(upperValue);
+      setSearchResults(results);
+      setShowDropdown(results.length > 0);
+      setSearchLoading(false);
+    }, 300);
+  };
+
+  // Handle selecting a symbol from dropdown
+  const handleSelectSymbol = (selectedSymbol: string) => {
+    setSymbol(selectedSymbol);
+    setShowDropdown(false);
+    setSearchResults([]);
+    inputRef.current?.focus();
+  };
+
+  // Handle keyboard navigation
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showDropdown || searchResults.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev < searchResults.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev > 0 ? prev - 1 : searchResults.length - 1
+        );
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (selectedIndex >= 0 && searchResults[selectedIndex]) {
+          handleSelectSymbol(searchResults[selectedIndex].symbol);
+        }
+        break;
+      case 'Escape':
+        setShowDropdown(false);
+        break;
+    }
+  };
+
+  const handleCalculate = async () => {
+    // Cleanup any existing stream
+    if (cleanupRef.current) {
+      cleanupRef.current();
+      cleanupRef.current = null;
+    }
+
+    setLoading(true);
+    setSkew(null);
+    setDetails(null);
+    setStatus('Connecting to server...');
+
+    // Start SSE stream
+    cleanupRef.current = streamSkewCalculation(
+      symbol,
+      // Progress handler
+      (progress) => {
+        switch (progress.type) {
+          case 'connected':
+            setStatus('Connected. Starting calculation...');
+            break;
+          case 'cached':
+            setStatus('⚡ Using cached result (1 hour TTL)');
+            break;
+          case 'chain':
+            setStatus(`Fetched ${progress.data?.symbolCount || 0} symbols...`);
+            break;
+          case 'phase1':
+            setStatus('Phase 1: Collecting delta values...');
+            break;
+          case 'phase2':
+            setStatus(progress.message || 'Phase 2: Collecting OI...');
+            break;
+        }
+      },
+      // Complete handler
+      (result) => {
+        setSkew(result.skew);
+        setDetails(result);
+        setStatus('Calculation Complete');
+        setLoading(false);
+        cleanupRef.current = null;
+      },
+      // Error handler
+      (error) => {
+        setStatus(`Error: ${error}`);
+        setLoading(false);
+        cleanupRef.current = null;
+      }
+    );
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (cleanupRef.current) {
+        cleanupRef.current();
+      }
+    };
+  }, []);
+
+  return (
+    <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+      {/* Background Glow Orbs */}
+      <div className="glow-orb-blue top-[-15%] left-[-10%]" />
+      <div className="glow-orb-emerald bottom-[-15%] right-[-10%]" />
+
+      <div className="max-w-xl w-full relative z-10 animate-fade-in">
+        <div className="glass-card rounded-3xl p-8 md:p-12">
+
+          <div className="flex flex-col items-center mb-10">
+            <img src="/logo.png" alt="TradingNirvana Logo" className="w-16 h-16 mb-6 opacity-90 drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]" />
+            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-center mb-2 gradient-text">
+              TradingNirvana™
+            </h1>
+            <p className="text-white/40 text-sm font-medium tracking-widest uppercase mb-4">Volatility Dashboard</p>
+
+            {/* Server status indicator */}
+            <div className="flex items-center gap-2 text-xs">
+              <div className={`w-2 h-2 rounded-full ${serverOnline === null ? 'bg-gray-500' :
+                serverOnline ? 'bg-green-500' : 'bg-red-500'
+                }`} />
+              <span className="text-white/40">
+                {serverOnline === null ? 'Checking server...' :
+                  serverOnline ? 'Server online' : 'Server offline'}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="autosuggest-container">
+              <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-2 ml-1">Asset Symbol</label>
+              <input
+                ref={inputRef}
+                type="text"
+                value={symbol}
+                onChange={(e) => handleSymbolChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
+                className="w-full rounded-xl px-5 py-4 text-xl font-medium placeholder-white/20"
+                placeholder="/ES"
+                autoComplete="off"
+              />
+
+              {/* Autosuggest Dropdown */}
+              {showDropdown && (
+                <div className="autosuggest-dropdown">
+                  {searchLoading ? (
+                    <div className="autosuggest-loading">Searching...</div>
+                  ) : (
+                    searchResults.slice(0, 10).map((result, index) => (
+                      <div
+                        key={result.symbol}
+                        className={`autosuggest-item ${index === selectedIndex ? 'selected' : ''}`}
+                        onClick={() => handleSelectSymbol(result.symbol)}
+                        onMouseEnter={() => setSelectedIndex(index)}
+                      >
+                        <span className="symbol">{result.symbol}</span>
+                        <span className="description">{result.description}</span>
+                        {result.instrumentType && (
+                          <span className="type-badge">{result.instrumentType}</span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleCalculate}
+              disabled={loading || serverOnline === false}
+              className="btn-gradient w-full py-4 rounded-xl font-bold text-lg tracking-wide text-white disabled:opacity-50"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Processing...</span>
+                </div>
+              ) : 'Calculate Skew'}
+            </button>
+
+            {status && (
+              <div className={`text-center text-sm font-medium ${status.includes('Error') ? 'text-red-400 bg-red-500/10 py-2 rounded-lg' : 'text-white/40'} animate-in fade-in slide-in-from-bottom-2`}>
+                {status}
+              </div>
+            )}
+
+            {skew !== null && (
+              <div className="mt-8 bg-black/20 rounded-2xl border border-white/5 p-8 relative overflow-hidden animate-in zoom-in-95 duration-300">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-emerald-500 opacity-50" />
+
+                <div className="text-center mb-8">
+                  <div className="text-xs font-bold text-white/40 uppercase tracking-widest mb-3">10-30 Delta P/C Ratio</div>
+                  <div
+                    className="text-6xl md:text-7xl font-mono font-bold drop-shadow-2xl"
+                    style={{
+                      color: skew < 0.7 ? '#22c55e' :   // Green - Bullish
+                        skew < 1.0 ? '#facc15' :   // Yellow - Neutral
+                          skew < 1.3 ? '#f97316' :   // Orange - Mildly Bearish
+                            '#ef4444'                  // Red - Bearish
+                    }}
+                  >
+                    {skew.toFixed(4)}
+                  </div>
+                  <div className="text-xs text-white/30 mt-2">
+                    {skew < 0.7 ? '🟢 Bullish' :
+                      skew < 1.0 ? '🟡 Neutral/Slightly Bullish' :
+                        skew < 1.3 ? '🟠 Slightly Bearish' :
+                          '🔴 Bearish'}
+                  </div>
+                </div>
+
+                {details && (
+                  <div className="grid grid-cols-2 gap-4 text-sm border-t border-white/5 pt-6">
+                    <div className="space-y-1">
+                      <div className="text-white/30 text-xs uppercase font-semibold">Expiration</div>
+                      <div className="font-medium text-white/90">{details.expirationDate}</div>
+                    </div>
+                    <div className="space-y-1 text-right">
+                      <div className="text-white/30 text-xs uppercase font-semibold">DTE</div>
+                      <div className="font-medium text-white/90">{details.dte} Days</div>
+                    </div>
+
+                    <div className="col-span-2 grid grid-cols-2 gap-4 bg-white/5 rounded-xl p-4 mt-2">
+                      <div>
+                        <div className="text-blue-400/80 text-xs font-bold uppercase mb-1">Call OI</div>
+                        <div className="text-white font-mono text-lg">{details.callOi.toLocaleString()}</div>
+                      </div>
+                      <div className="text-right border-l border-white/10 pl-4">
+                        <div className="text-emerald-400/80 text-xs font-bold uppercase mb-1">Put OI</div>
+                        <div className="text-white font-mono text-lg">{details.putOi.toLocaleString()}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
