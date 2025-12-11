@@ -30,11 +30,35 @@ const getPricingSkewColor = (skew: number | null): string => {
     return '#ef4444';                   // Red - Puts expensive (Bearish)
 };
 
-const getSentiment = (skew: number): string => {
-    if (skew < 0.7) return 'Bullish';
-    if (skew < 1.0) return 'Neutral';
-    if (skew < 1.3) return 'Sl. Bearish';
-    return 'Bearish';
+// Get combined sentiment label based on OI and Price skew
+// When OI skew < 0.5 (very bullish), we invert it for averaging
+// and use reversed thresholds (higher avg = stronger bullish)
+const getCombinedSentiment = (oiSkew: number, priceSkew: number | null): { label: string; color: string } => {
+    // When no price skew, just use OI skew with normal thresholds
+    if (priceSkew === null) {
+        if (oiSkew < 0.7) return { label: 'Bullish', color: '#22c55e' };
+        if (oiSkew < 1.0) return { label: 'Neutral', color: '#facc15' };
+        if (oiSkew < 1.3) return { label: 'Sl. Bearish', color: '#f97316' };
+        return { label: 'Bearish', color: '#ef4444' };
+    }
+
+    const isBullishOi = oiSkew < 0.5;
+    const normalizedOi = isBullishOi ? (1 / oiSkew) : oiSkew;
+    const avg = (normalizedOi + priceSkew) / 2;
+
+    if (isBullishOi) {
+        // Inverted scale: higher avg = stronger bullish signal
+        if (avg > 1.3) return { label: 'Bullish', color: '#22c55e' };
+        if (avg > 1.0) return { label: 'Sl. Bullish', color: '#86efac' };
+        if (avg > 0.7) return { label: 'Neutral', color: '#facc15' };
+        return { label: 'Sl. Bearish', color: '#f97316' };
+    } else {
+        // Normal scale
+        if (avg < 0.7) return { label: 'Bullish', color: '#22c55e' };
+        if (avg < 1.0) return { label: 'Neutral', color: '#facc15' };
+        if (avg < 1.3) return { label: 'Sl. Bearish', color: '#f97316' };
+        return { label: 'Bearish', color: '#ef4444' };
+    }
 };
 
 const getStatusText = (status: AssetStatus): string => {
@@ -111,18 +135,12 @@ export function AssetCard({ symbol, description, state, onRetry }: AssetCardProp
                     </div>
                     <div
                         className="asset-card__sentiment"
-                        style={{ color: getSkewColor(
-                            result.pricingSkew !== null
-                                ? (result.skew + result.pricingSkew) / 2
-                                : result.skew
-                        ) }}
+                        style={{
+                            color: getCombinedSentiment(result.skew, result.pricingSkew).color
+                        }}
                         title="Based on average of OI and Price skew"
                     >
-                        {getSentiment(
-                            result.pricingSkew !== null
-                                ? (result.skew + result.pricingSkew) / 2
-                                : result.skew
-                        )}
+                        {getCombinedSentiment(result.skew, result.pricingSkew).label}
                     </div>
                     <div className="asset-card__dte">
                         DTE: {result.dte}
