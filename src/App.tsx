@@ -275,37 +275,35 @@ function App() {
               )}
 
               {skew !== null && details && (() => {
-                const getSkewColor = (s: number) =>
-                  s < 0.7 ? '#22c55e' : s < 1.0 ? '#facc15' : s < 1.3 ? '#f97316' : '#ef4444';
-
-                // Normalize OI for averaging: when very bullish (< 0.5), invert
-                const isBullishOi = skew < 0.5;
-                const normalizedOi = isBullishOi ? (1 / skew) : skew;
-                const avgSkew = details.pricingSkew !== null
-                  ? (normalizedOi + details.pricingSkew) / 2
-                  : skew;
-
-                // Sentiment with reversed thresholds when OI is bullish
-                const getSentiment = () => {
-                  if (details.pricingSkew === null) {
-                    // Just OI, use normal thresholds
-                    return skew < 0.7 ? 'Bullish' : skew < 1.0 ? 'Neutral' : skew < 1.3 ? 'Sl. Bearish' : 'Bearish';
-                  }
-                  if (isBullishOi) {
-                    // Inverted: higher avg = stronger bullish
-                    return avgSkew > 1.3 ? 'Bullish' : avgSkew > 1.0 ? 'Sl. Bullish' : avgSkew > 0.7 ? 'Neutral' : 'Sl. Bearish';
-                  }
-                  // Normal thresholds
-                  return avgSkew < 0.7 ? 'Bullish' : avgSkew < 1.0 ? 'Neutral' : avgSkew < 1.3 ? 'Sl. Bearish' : 'Bearish';
+                const getSkewColor = (s: number) => {
+                  if (s < 0.3) return '#a855f7';
+                  if (s < 0.5) return '#22c55e';
+                  if (s < 0.7) return '#86efac';
+                  if (s < 1.3) return '#facc15';
+                  if (s < 1.5) return '#f97316';
+                  if (s < 3.0) return '#ef4444';
+                  return '#7f1d1d';
                 };
 
-                // Color: use inverted thresholds when bullish OI
+                // With new symmetric ranges, we just average directly
+                const avgSkew = details.pricingSkew !== null
+                  ? (skew + details.pricingSkew) / 2
+                  : skew;
+
+                const getSentiment = () => {
+                  const val = details.pricingSkew !== null ? avgSkew : skew;
+                  if (val < 0.3) return 'Extr. Bullish';
+                  if (val < 0.5) return 'Bullish';
+                  if (val < 0.7) return 'Mildly Bullish';
+                  if (val < 1.3) return 'Neutral';
+                  if (val < 1.5) return 'Mildly Bearish';
+                  if (val < 3.0) return 'Bearish';
+                  return 'Extr. Bearish';
+                };
+
                 const getSentimentColor = () => {
-                  if (details.pricingSkew === null) return getSkewColor(skew);
-                  if (isBullishOi) {
-                    return avgSkew > 1.3 ? '#22c55e' : avgSkew > 1.0 ? '#86efac' : avgSkew > 0.7 ? '#facc15' : '#f97316';
-                  }
-                  return getSkewColor(avgSkew);
+                  const val = details.pricingSkew !== null ? avgSkew : skew;
+                  return getSkewColor(val);
                 };
 
                 return (
