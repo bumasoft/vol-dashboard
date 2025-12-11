@@ -1,0 +1,35 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model SkewSnapshot {
+  id              Int      @id @default(autoincrement())
+  symbol          String   // e.g., "/ES", "/NQ", "SPY"
+  timestamp       DateTime @default(now())
+  
+  // Core skew metrics
+  oiSkew          Float    // Put/Call OI ratio (the "skew" field)
+  pricingSkew     Float?   // Price-based skew (nullable)
+  
+  // Additional context for analysis
+  impliedMove     Float?   
+  underlyingPrice Float?   
+  dte             Int      // Days to expiration
+  expirationDate  String   
+  
+  // Raw OI data
+  callOi          Int
+  putOi           Int
+  
+  // Delta values used
+  callDelta       Float
+  putDelta        Float
+
+  @@index([symbol, timestamp])
+  @@index([timestamp])
+}

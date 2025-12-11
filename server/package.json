@@ -4,9 +4,12 @@
     "scripts": {
         "dev": "tsx watch src/index.ts",
         "start": "node dist/index.js",
-        "build": "tsc"
+        "build": "tsc",
+        "prisma:generate": "prisma generate",
+        "prisma:migrate": "prisma migrate dev"
     },
     "dependencies": {
+        "@prisma/client": "^5.22.0",
         "@tastytrade/api": "^6.0.1",
         "cors": "^2.8.5",
         "date-fns": "^4.1.0",
@@ -17,6 +20,7 @@
         "@types/cors": "^2.8.17",
         "@types/express": "^5.0.0",
         "@types/node": "^22.15.2",
+        "prisma": "^5.22.0",
         "tsx": "^4.19.4",
         "typescript": "^5.9.3"
     }

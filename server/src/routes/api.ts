@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate, fetchOptionChain, streamSkewCalculation, cleanupStreamer, searchSymbols } from '../services/tastytrade';
 import { skewCache } from '../services/cache';
+import { saveSkewSnapshot, getSkewHistory, getTrackedSymbols, getLatestSnapshots } from '../services/db';
 import { ASSET_GROUPS, ALL_SYMBOLS, AssetGroupKey, SYMBOL_DESCRIPTIONS } from '../config/assets';
 
 export const apiRouter = Router();
@@ -113,6 +114,8 @@ apiRouter.get('/stream-batch', async (req: Request, res: Response) => {
                         sendProgress(symbol, progress.type, { message: progress.message });
                     } else if (progress.type === 'result') {
                         skewCache.set(cacheKey, progress.data);
+                        // Save to database for historical tracking
+                        saveSkewSnapshot(symbol, progress.data);
                         results[symbol] = progress.data;
                         sendProgress(symbol, 'complete', progress.data);
                         resolve();
@@ -242,6 +245,8 @@ apiRouter.get('/stream-skew/:symbol', async (req: Request, res: Response) => {
             // Cache the result and end stream
             if (progress.type === 'result') {
                 skewCache.set(cacheKey, progress.data);
+                // Save to database for historical tracking
+                saveSkewSnapshot(symbol, progress.data);
                 console.log(`[Cache SET] ${cacheKey} - cached for 1 hour`);
                 res.write('event: close\ndata: done\n\n');
                 res.end();
@@ -291,6 +296,50 @@ apiRouter.post('/cleanup', async (_req: Request, res: Response) => {
         res.json({ status: 'cleaned up' });
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+});
+
+// ========== HISTORY ENDPOINTS ==========
+
+// Get historical skew data for a symbol
+apiRouter.get('/history/:symbol', async (req: Request, res: Response) => {
+    try {
+        const { symbol } = req.params;
+        const { limit, startDate, endDate } = req.query;
+
+        const history = await getSkewHistory({
+            symbol,
+            limit: limit ? parseInt(limit as string, 10) : 100,
+            startDate: startDate ? new Date(startDate as string) : undefined,
+            endDate: endDate ? new Date(endDate as string) : undefined,
+        });
+
+        res.json({
+            symbol: symbol.toUpperCase(),
+            count: history.length,
+            data: history,
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('History query error:', message);
+        res.status(500).json({ error: message });
+    }
+});
+
+// Get all symbols with historical data
+apiRouter.get('/history', async (_req: Request, res: Response) => {
+    try {
+        const symbols = await getTrackedSymbols();
+        const latest = await getLatestSnapshots();
+
+        res.json({
+            symbols,
+            latest,
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('History symbols error:', message);
         res.status(500).json({ error: message });
     }
 });
