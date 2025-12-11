@@ -7,10 +7,11 @@ interface AssetGroupProps {
     states: Record<string, AssetState>;
     onRefresh: () => void;
     onRetrySymbol: (symbol: string) => void;
+    onShowChart: (symbol: string) => void;
     isRefreshing: boolean;
 }
 
-export function AssetGroup({ name, symbols, descriptions, states, onRefresh, onRetrySymbol, isRefreshing }: AssetGroupProps) {
+export function AssetGroup({ name, symbols, descriptions, states, onRefresh, onRetrySymbol, onShowChart, isRefreshing }: AssetGroupProps) {
     return (
         <div className="asset-group">
             <div className="asset-group__header">
@@ -46,6 +47,7 @@ export function AssetGroup({ name, symbols, descriptions, states, onRefresh, onR
                         description={descriptions[symbol]}
                         state={states[symbol] || { status: 'idle' }}
                         onRetry={() => onRetrySymbol(symbol)}
+                        onShowChart={() => onShowChart(symbol)}
                     />
                 ))}
             </div>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { streamSkewCalculation, checkHealth, searchSymbols } from './services/tasty';
 import type { SkewResult, SymbolSearchResult } from './services/tasty';
 import { MarketOverview } from './components/MarketOverview';
+import { SkewHistoryChart } from './components/SkewHistoryChart';
 
 type ViewMode = 'single' | 'market';
 
@@ -13,6 +14,7 @@ function App() {
   const [details, setDetails] = useState<SkewResult | null>(null);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('market');
+  const [viewingChartSymbol, setViewingChartSymbol] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
   // Autosuggest state
@@ -154,6 +156,10 @@ function App() {
     };
   }, []);
 
+  const handleShowChart = (symbolToShow: string) => {
+    setViewingChartSymbol(symbolToShow);
+  };
+
   return (
     <div className="min-h-screen w-full bg-[#0a0a0a] text-white flex flex-col items-center p-4 relative overflow-hidden font-sans">
       {/* Background Glow Orbs */}
@@ -206,14 +212,25 @@ function App() {
 
       {/* Main Content */}
       {viewMode === 'market' ? (
-        <MarketOverview serverOnline={serverOnline} />
+        <MarketOverview serverOnline={serverOnline} onShowChart={handleShowChart} />
       ) : (
         <div className="max-w-xl w-full relative z-10 animate-fade-in flex-1 flex items-center">
           <div className="glass-card rounded-3xl p-8 md:p-12 w-full">
 
             <div className="space-y-6">
               <div className="autosuggest-container">
-                <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider mb-2 ml-1">Asset Symbol</label>
+                <div className="flex items-center justify-between mb-2 ml-1">
+                  <label className="block text-xs font-semibold text-white/40 uppercase tracking-wider">Asset Symbol</label>
+                  <button
+                    onClick={() => handleShowChart(symbol)}
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-medium bg-blue-500/10 px-2 py-1 rounded-md transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                    </svg>
+                    History Chart
+                  </button>
+                </div >
                 <input
                   ref={inputRef}
                   type="text"
@@ -250,7 +267,7 @@ function App() {
                     )}
                   </div>
                 )}
-              </div>
+              </div >
 
               <button
                 onClick={handleCalculate}
@@ -287,7 +304,7 @@ function App() {
 
                 // With new symmetric ranges, we just average directly
                 const avgSkew = details.pricingSkew !== null
-                  ? (skew + details.pricingSkew) / 2
+                  ? (5 * skew + details.pricingSkew) / 6
                   : skew;
 
                 const getSentiment = () => {
@@ -394,11 +411,23 @@ function App() {
                   </div>
                 );
               })()}
-            </div>
+            </div >
+          </div >
+        </div >
+      )}
+
+      {/* Historical Chart Modal */}
+      {viewingChartSymbol && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-4xl relative">
+            <SkewHistoryChart
+              symbol={viewingChartSymbol}
+              onClose={() => setViewingChartSymbol(null)}
+            />
           </div>
         </div>
       )}
-    </div>
+    </div >
   );
 }
 

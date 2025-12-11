@@ -13,6 +13,7 @@ interface AssetCardProps {
     description?: string;
     state: AssetState;
     onRetry?: () => void;
+    onShowChart?: () => void;
 }
 
 const getSkewColor = (skew: number): string => {
@@ -25,16 +26,6 @@ const getSkewColor = (skew: number): string => {
     return '#7f1d1d';                   // Dark Red - Extreme Bearish
 };
 
-const getPricingSkewColor = (skew: number | null): string => {
-    if (skew === null) return 'rgba(255, 255, 255, 0.4)';
-    if (skew < 0.3) return '#a855f7';  // Purple - Extreme Bullish
-    if (skew < 0.5) return '#22c55e';  // Green - Bullish
-    if (skew < 0.7) return '#86efac';  // Light Green - Mildly Bullish
-    if (skew < 1.3) return '#facc15';  // Yellow - Neutral
-    if (skew < 1.5) return '#f97316';  // Orange - Mildly Bearish
-    if (skew < 3.0) return '#ef4444';  // Red - Bearish
-    return '#7f1d1d';                   // Dark Red - Extreme Bearish
-};
 
 // Get combined sentiment label based on OI and Price skew
 const getCombinedSentiment = (oiSkew: number, priceSkew: number | null): { label: string; color: string } => {
@@ -63,7 +54,7 @@ const getCombinedSentiment = (oiSkew: number, priceSkew: number | null): { label
     // 1.5 - 3.0: Bearish
     // > 3.0: Extreme Bearish
 
-    const avg = (oiSkew + priceSkew) / 2;
+    const avg = (5 * oiSkew + priceSkew) / 6;
 
     if (avg < 0.3) return { label: 'Extr. Bullish', color: '#a855f7' };
     if (avg < 0.5) return { label: 'Bullish', color: '#22c55e' };
@@ -88,7 +79,7 @@ const getStatusText = (status: AssetStatus): string => {
     }
 };
 
-export function AssetCard({ symbol, description, state, onRetry }: AssetCardProps) {
+export function AssetCard({ symbol, description, state, onRetry, onShowChart }: AssetCardProps) {
     const { status, result, error } = state;
     const isLoading = ['pending', 'calculating', 'phase1', 'phase2'].includes(status);
     const isComplete = status === 'complete' || status === 'cached';
@@ -98,9 +89,33 @@ export function AssetCard({ symbol, description, state, onRetry }: AssetCardProp
         <div className={`asset-card ${isLoading ? 'asset-card--loading' : ''} ${isError ? 'asset-card--error' : ''}`}>
             {/* Symbol and Description */}
             <div className="asset-card__header">
-                <div className="asset-card__symbol">{symbol}</div>
-                {description && <div className="asset-card__description">{description}</div>}
+                <div className="asset-card__header-left">
+                    <div className="asset-card__symbol">{symbol}</div>
+                    {description && <div className="asset-card__description">{description}</div>}
+                </div>
             </div>
+
+            {/* Chart Button */}
+            {onShowChart && (
+                <div className="absolute top-2 right-2 z-20 group">
+                    <button
+                        className="text-white/20 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 active:scale-95 duration-200"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onShowChart();
+                        }}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                        </svg>
+                    </button>
+                    {/* Tooltip */}
+                    <div className="absolute top-full right-0 mt-2 px-2.5 py-1.5 text-[10px] font-medium text-white bg-[#1a1a1a] border border-white/10 rounded-md shadow-xl opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none whitespace-nowrap z-50 backdrop-blur-sm">
+                        View History
+                    </div>
+                </div>
+            )}
+
 
             {/* Content based on state */}
             {isComplete && result ? (
@@ -121,63 +136,65 @@ export function AssetCard({ symbol, description, state, onRetry }: AssetCardProp
                         className="asset-card__skew-row"
                         title="Price Skew: Avg Put Mid Price / Avg Call Mid Price (10-30 delta options)"
                     >
-                        <span className="asset-card__skew-label">Price</span>
+                        <span className="asset-card__skew-label">PR</span>
                         <span
                             className="asset-card__skew-value"
-                            style={{ color: getPricingSkewColor(result.pricingSkew) }}
+                            style={{ color: getSkewColor(result.pricingSkew || 0) }}
                         >
-                            {result.pricingSkew !== null ? result.pricingSkew.toFixed(4) : 'N/A'}
+                            {result.pricingSkew?.toFixed(4) || 'N/A'}
                         </span>
                     </div>
-                    <div
-                        className="asset-card__skew-row"
-                        title={(() => {
-                            if (result.impliedMove === null || result.underlyingPrice === null) {
-                                return 'Implied Move: Expected price range by expiration (ATM straddle / underlying price)';
-                            }
-                            const decimals = symbol.startsWith('/6') ? 4 : 2;
-                            const lower = (result.underlyingPrice * (1 - result.impliedMove / 100)).toFixed(decimals);
-                            const upper = (result.underlyingPrice * (1 + result.impliedMove / 100)).toFixed(decimals);
-                            return `Implied Move: ±${result.impliedMove.toFixed(2)}% | Range: ${lower} - ${upper}`;
-                        })()}
-                    >
-                        <span className="asset-card__skew-label">Move</span>
-                        <span className="asset-card__skew-value asset-card__implied-move">
-                            {result.impliedMove !== null ? `±${result.impliedMove.toFixed(2)}%` : 'N/A'}
-                        </span>
-                    </div>
+                    {result.impliedMove !== null && (
+                        <div className="asset-card__skew-row" title="Implied Move (approx. 1 std dev)">
+                            <span className="asset-card__skew-label">MOVE</span>
+                            <span className="asset-card__skew-value asset-card__implied-move">
+                                ±{result.impliedMove.toFixed(2)}%
+                            </span>
+                        </div>
+                    )}
+
                     <div
                         className="asset-card__sentiment"
-                        style={{
-                            color: getCombinedSentiment(result.skew, result.pricingSkew).color
-                        }}
-                        title="Based on average of OI and Price skew"
+                        style={{ color: getCombinedSentiment(result.skew, result.pricingSkew).color }}
                     >
                         {getCombinedSentiment(result.skew, result.pricingSkew).label}
                     </div>
-                    <div className="asset-card__dte">
-                        DTE: {result.dte}
-                    </div>
+
+                    {result.dte !== undefined && (
+                        <div className="asset-card__dte">
+                            DTE: {result.dte}
+                        </div>
+                    )}
                 </>
-            ) : isError ? (
+            ) : null}
+
+            {isLoading && (
+                <div className="asset-card__loading">
+                    <div className="asset-card__spinner"></div>
+                    <div>{getStatusText(status)}</div>
+                </div>
+            )}
+
+            {status === 'idle' && (
+                <div className="asset-card__idle">
+                    Ready
+                </div>
+            )}
+
+            {isError && (
                 <div className="asset-card__error-container">
-                    <div className="asset-card__error-msg">
-                        {error?.includes('Timeout') ? 'No OI Data' : 'Failed'}
-                    </div>
+                    <div className="asset-card__error-msg">{error || 'Failed to calculate'}</div>
                     {onRetry && (
-                        <button className="asset-card__retry-btn" onClick={onRetry}>
+                        <button
+                            className="asset-card__retry-btn"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onRetry();
+                            }}
+                        >
                             Retry
                         </button>
                     )}
-                </div>
-            ) : isLoading ? (
-                <div className="asset-card__loading">
-                    <div className="asset-card__spinner" />
-                    <span>{getStatusText(status)}</span>
-                </div>
-            ) : (
-                <div className="asset-card__idle">
-                    {getStatusText(status)}
                 </div>
             )}
         </div>

@@ -8,9 +8,10 @@ type GroupKey = 'fx' | 'indices' | 'bonds' | 'crypto';
 
 interface MarketOverviewProps {
     serverOnline: boolean | null;
+    onShowChart: (symbol: string) => void;
 }
 
-export function MarketOverview({ serverOnline }: MarketOverviewProps) {
+export function MarketOverview({ serverOnline, onShowChart }: MarketOverviewProps) {
     const [groups, setGroups] = useState<AssetGroups | null>(null);
     const [descriptions, setDescriptions] = useState<Record<string, string>>({});
     const [assetStates, setAssetStates] = useState<Record<string, AssetState>>({});
@@ -159,7 +160,7 @@ export function MarketOverview({ serverOnline }: MarketOverviewProps) {
                 if (uncachedSymbols.length > 0) {
                     // Small delay to let UI render first
                     setTimeout(() => {
-                        startBatchCalculation(uncachedSymbols, 'all');
+                        startBatchCalculation(uncachedSymbols);
                     }, 100);
                 }
             } catch (err) {
@@ -247,6 +248,7 @@ export function MarketOverview({ serverOnline }: MarketOverviewProps) {
                         states={assetStates}
                         onRefresh={() => refreshGroup(key)}
                         onRetrySymbol={retrySymbol}
+                        onShowChart={onShowChart}
                         isRefreshing={isGroupRefreshing(group.symbols)}
                     />
                 ))}
